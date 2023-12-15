@@ -1,0 +1,113 @@
+/*
+AVR Morse Code Remote Program.
+J Phillips DEC 2023.
+
+This program uses the same base code as the Morse code Transmitter program, with hard coded, predetermined sequences of characters that correspond
+buttons on this programs ATMEGA 328 board. This output is seen through the use of aN HW-493 laser on the board.
+for more information on how these functions work, see Morse Code Transmitter Program.
+
+See also- Morse Code Transmitter program, Morse Code Receiver program.
+*/
+
+#include <avr/io.h>
+
+const int time_unit = 100;			//general timekeeping number that delays are based upon.
+const int dashtime = time_unit * 2;	//general timeframe for a dash within delay functions.
+const int dottime = time_unit * 1;	//general timeframe for a dot within delay functions.
+int instructionset[20];				//Instructions are placed within this array.
+int instructionstep;				//index for instructionset array.
+char alphabet [270] = "01200100021010210020020000010211020000020020001112101200100211200102001112001102110120102000020120000012000012011201001210112110022";
+//stores the Morse alphabet as a single string (01200 is A, 10002 is B, etc) 0's behind a characters 2 are only used to keep the sizes consistent, all characters are length 5 this way.
+
+void delayms(int);					//general delay function.
+void outlong();						//delay function with PB0=1 for a duration.
+void outshort();					//delay function with PB0=1 for a duration.
+void outputmorse();					//iterates through a set of instructions.
+int morsedecode(char[]);			//splits the instructions up into substrings of 5 character length.
+
+int main(void)
+{
+	DDRB=1;								//we output through PB0 on the 328.
+	int buttoncheck;					//checking portb values for button presses.
+	while(1){							
+		buttoncheck = PINB & (1<<1);	//taking all inputs into buttoncheck integer, anding it with a 1 along bit 0 to only collect data from port0.
+		if (buttoncheck == 0)			//the buttons on this board are an active high. when pressed buttons will output a 0, making this true for the button on pb0.
+		{
+			instructionset[0] = 15;		//this sequence of Morse is then hard coded per button as a sequence, and output for use in the Morse Code Transmitter program.
+			instructionset[1] = 16;
+			instructionset[2]= 5;
+			instructionset[3] = 14;
+			instructionset[4] = 1;
+			instructionset[5] = 27;
+			outputmorse();
+		}									//end of if (button 1)
+		buttoncheck = PINB & (1<<2);
+		if (buttoncheck == 0)
+		{
+			instructionset[0] = 15;
+			instructionset[1] = 16;
+			instructionset[2]= 5;
+			instructionset[3] = 14;
+			instructionset[4] = 2;
+			instructionset[5] = 27;
+			outputmorse();
+		}									//end of if (button 2)
+		buttoncheck = PINB & (1<<3);
+		if (buttoncheck == 0)
+		{
+			instructionset[0] = 15;
+			instructionset[1] = 16;
+			instructionset[2]= 5;
+			instructionset[3] = 14;
+			instructionset[4] = 3;
+			instructionset[5] = 27;
+			outputmorse();
+		}									//end of if (button 3)
+	}										//end of while
+}											//end of main
+
+void outputmorse(){
+	char morseletter[4] = "";
+	for (int i = 0; i < 20; i++)
+	{
+		if (instructionset[i] == 27) return;
+		int currentcharacter = (instructionset[i]-1)*5;
+		for(int j = 0; j < 5; j++)
+		morseletter[j] = alphabet[currentcharacter+j];
+		morsedecode(morseletter);
+	}
+}
+
+void outlong(){
+	PORTB = 0b1;			
+	delayms(dashtime);		
+	PORTB = 0b0;			
+	delayms(dottime);		
+}
+
+void outshort(){
+	PORTB = 0b1;			
+	delayms(dottime);		
+	PORTB = 0b0;			
+	delayms(dottime);		
+}
+
+void delayms(int x){
+	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < 54*x/4; i++);
+}
+
+int morsedecode(char morseletter[4]){
+	for(int i = 0; i < 4; i++)		
+		if (morseletter[i] == '1')
+		outlong();
+		else if (morseletter[i] == '0')
+		outshort();
+		else if (morseletter[i] == '2')
+		{
+			delayms(dashtime);
+			return 0;
+		}
+	delayms(dashtime);					
+	return 0;							
+}
