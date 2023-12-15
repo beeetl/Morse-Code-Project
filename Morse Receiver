@@ -1,0 +1,115 @@
+/*
+AVR Morse Code Receiver Program.
+J Phillips DEC 2023.
+
+This program receives an infrared signal that it attempts to translate to Morse code through an Infrared Receiver. it then takes any recognized sequences of on times of signals,
+and translates them into full English characters, placing them as a number into array command[] to be used in pseudo-function calls.
+
+See also- Morse Code Transmitter program, Morse Code Remote Program.
+*/
+
+#include <avr/io.h>
+#include <math.h>
+#include <C:\avr\i2c.h>
+#include <C:\avr\lcd_16x2_i2c.h>
+#include <C:\avr\spi.h>
+#include <string.h>
+#include <avr/interrupt.h>
+
+void determinevalue(int);	//based on a timer, this describes a received infrared signal to a dot or a dash.
+void delay_1ms();			//general 1ms delay function.
+void charout();				//takes a sequence of dots and dashes and if an English character is recognized, place into command array and display to LCD.
+void commandfind(int);		//if a sequence of numbers in the command array are recognized, follow through with a pseudo-function call.
+int command[6];				//command array in which recognized English characters are placed.
+int WFH();					//waiting for an infrared signal to be received through the IR Receiver.
+int WFL();					//waiting for an infrared signal to stop being received through the IR Receiver.
+
+int character_received=0;                                                   //keeps track of which character in a string of Morse is being read.
+int count;                                                                  //used in the keep loops to determine how long a Morse light is on, to determine hi/lo.
+int characterspace=10000;                                                   //keeping track of column of a value, divides by 10 every character.
+int commandpoint = 0;                                                       //used to track the number of characters input for purposes of running commands through Morse.
+const int time_unit = 100;                                                  //time keeping table for parallel to Morse Transmitter.
+const int dashtime = time_unit * 4.5;                                       //this program counts much faster, so it's time units must be much larger ~2.5 times.
+const int dottime = time_unit * 2.5;										
+const int deadtime = (dashtime + dottime) / 2;                              //used as a general average for helping keep times for specific processes'.
+int alphabet[27] = {1200, 10002, 10102, 10020, 2000, 102, 11020, 2, 200, 1112, 10120, 1002, 11200, 10200
+, 11120, 1102, 11012, 1020, 20, 12000, 120, 12, 1120, 10012, 10112, 11002}; //these values are corresponding to the alphabet and its Morse code position
+																			//as in, 1200 corresponds to A, alphabetically position 0, 10002 to B etc.
+class lcd_16x2_i2c textout;                                                 //initializer for the text display screen, for showing any recognized Morse sequences as English.
+
+int main(void)
+{
+	int IR_in = 0;                                                          //used as an input from the Infrared receiver
+	while (1)                                                               //main program loop
+	{
+		do{
+			IR_in = PINB & 0b1;                                             //records IR_in from the pin associated with the Infrared receiver module
+		} while(IR_in == 0);                                                //sits in this loop while the Infrared receiver has no input
+		count = WFL();                                                      //the value returned from WFL is the amount of time Infrared receiver has an input
+		determinevalue(count);                                              //correlates a Morse symbol to the amount of time the Infrared receiver receives an input
+		WFH();                                                              //waiting for an input to the Infrared receiver
+	}																			//end of while(1)
+}																				//end of main
+
+int WFH(){
+	int IR_in;                      //value for the output of the Infrared receiver.
+	int count = 0;                  //counting for purposes of Morse character choice, returned from this function.
+	do{
+		IR_in = PINB & 0b1;         //taking the output form the Infrared receiver as the input into IR_in.
+		count++;                    //counting up once per check of IR_in.
+		delay_1ms();                //delaying by 1ms.
+		if(count > deadtime){       //deadtime corresponds to halfway between a dot and a dash time. if we are off for this amount of time, we know we are done.
+			determinevalue(-1);     //calls determinevalue with a -1 to indicate the end of a character.
+			return 0;               //returning 0 as we do not care about a value this big.
+		}								//end of if.
+	} while(IR_in == 0);            //looping this process while Infrared receiver is not getting an input.
+	return count;                   //returning a counted value for the time the Infrared receiver is not getting an input.
+}										//end of WFH()
+
+int WFL(){
+	int IR_in;                      //value for the output of the Infrared receiver
+	int count = 0;                  //counting for purposes of Morse character choice, returned from this function
+	do{
+		IR_in = PINB & 0b1;         //taking the output form the Infrared receiver as the input into IR_in
+		count++;                    //counting up once per check of IR_in
+		delay_1ms();                //delaying by 1ms
+	} while(IR_in == 1);            //looping this process while Infrared receiver is not getting an input.
+	return count;                   //returning a counted value for the time the Infrared receiver is getting an input.
+}										//end of WFL()
+
+void determinevalue(int count){
+	if (count == -1){                                                  //we correlate a -1 as the end of a string of Morse.
+		character_received = character_received + 2*characterspace;    //this is then the 2 in every string of Morse, as a character end.
+		charout();                                                     //now the integer in character received is done, and we output a  character based on this val.
+		characterspace = 10000;                                        //characters start at the 5th digit and go down until a 2 is received.
+		return;                                                        //return from determinevalue, as we only want to output the character in this case.
+	}
+	if (count > deadtime)                                              //if we are above the limit for a dot (> deadtime) we correlate this with a dash, and add a 1.
+		character_received = character_received + 1*characterspace;    //we add this value to character_received and then divide it by ten to get to the next digit.
+	characterspace /= 10;
+}																			//end of determinevalue()
+
+
+void delay_1ms(){
+	for (int i = 0; i < 54; i++);   // general delay function, 1 millisecond
+}										//end of delay_1ms()
+
+void charout(){
+	for (int i = 0; i <26; i++)						//26 letters of the alphabet, we compare our built character_received to our alphabet index.
+		if (character_received == alphabet[i]){		//if matching, ie, character_received is a recognized letter, namely letter i in the list, we display it.
+			textout.da(0x41 + i);					//0x41 corresponds to A, then if we receive an A at index i=0 we output 0x41 + 0. likewise Z would be 0x41 + 25, etc.
+			commandfind(i);							//then, proceed into commandfind corresponding to letter i.
+		}													//end of if
+	character_received=0;							//reset character_received to get the next character.
+}														//end of charout()
+
+void commandfind(int code){
+	command[commandpoint] = code;			//construct an array based on the letters recognized by charout, command[0]=1 if the first letter received is a B, etc.
+	commandpoint++;							// add to commandpoint to place the next value into the array.
+	if (command[0] == 14 && command[1] == 15 && command[2] == 4 && command[3] == 13 && commandpoint == 5){
+		textout.clear();                    //this if statement defines a function relayed over a string of Morse. 14 corresponds to alphabet[14] = O, etc.
+		DDRD ^= (1<<command[4]);            //then, this if statement reads if command[0-3] == open, and we are at the 5th entry into the command, we bitshift a 1 into
+		PORTD ^= (1<<command[4]);           //ddrb to make it an output, then bit shift again into portd to make that pin light up, thus turning on an led and reseting
+		commandpoint = 0;                   //commandpoint to make use of this function, for another Morse function
+	}											//end of if
+}												//end of commandfind
